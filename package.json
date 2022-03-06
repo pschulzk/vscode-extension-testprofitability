@@ -1,0 +1,23 @@
+{
+  "name": "vscode-extension-testprofitability-",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pschulzk/vscode-extension-testprofitability-.git"
+  },
+  "author": "Philip Schulz-Klingauf",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/pschulzk/vscode-extension-testprofitability-/issues"
+  },
+  "homepage": "https://github.com/pschulzk/vscode-extension-testprofitability-#readme",
+  "devDependencies": {
+    "generator-code": "^1.6.7",
+    "yo": "^4.3.0"
+  }
+}
