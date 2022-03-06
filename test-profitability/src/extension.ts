@@ -45,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
     // The command has been defined in the package.json file
     // Now provide the implementation of the command with registerCommand
     // The commandId parameter must match the command field in package.json
-    let disposable = vscode.commands.registerCommand('test-profitability.parseWorkspace', () => {
+    const disposable = vscode.commands.registerCommand('test-profitability.parseWorkspace', async () => {
 
         let undoStopBefore = true;
         // const rootFolderUri: vscode.Uri = vscode.window.activeTextEditor.document.fileName;
@@ -57,12 +57,12 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             },
         };
-        const userInputData: {
-            projectName: string | null;
-            selectedFolders: vscode.Uri[] | null;
-        } = {
+        const includePattern: vscode.GlobPattern = '*.ts';
+        const excludePattern: vscode.GlobPattern = '*.{po,spec,d}.ts';
+        const mydata: DocumentNodeIndex = {
             projectName: null,
-            selectedFolders: null,
+            documentsParsed: [],
+            stats: {},
         };
 
         // The code you place here will be executed every time your command is executed
@@ -74,85 +74,63 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        vscode.window.showInputBox(userTextInputOptions)
-            .then((userInput: unknown) => {
-                if (!userInput || typeof userInput !== 'string') {
-                    // undo
-                    if (!undoStopBefore) {
-                        vscode.commands.executeCommand('undo');
-                    }
-                    throw new Error(`ERROR: invalid input string for projectName!`);
-                } else {
-                    userInputData.projectName = userInput;
+        const userInput: unknown = await vscode.window.showInputBox(userTextInputOptions);
+        if (!userInput || typeof userInput !== 'string') {
+            // undo
+            if (!undoStopBefore) {
+                vscode.commands.executeCommand('undo');
+            }
+            throw new Error(`ERROR: invalid input string for projectName!`);
+        } else {
+            mydata.projectName = userInput;
+        }
+        
+        const uris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${includePattern}`, `**/${excludePattern}`, 5);
+        if (!uris || uris.length === 0) {
+            throw new Error(`No files found with extension '${includePattern}'.`);
+        }
+
+        const tasks: Thenable<void>[] = uris.map(async (uri: vscode.Uri) => {
+            const symbols: vscode.DocumentSymbol[] = await (vscode.commands.executeCommand(
+                'vscode.executeDocumentSymbolProvider',
+                vscode.Uri.file(vscode.window.activeTextEditor!.document.fileName)
+            ) as Thenable<vscode.DocumentSymbol[]>);
+
+            const parsedData = processDocumentEntry(uri.path, symbols, 0);
+            mydata.documentsParsed!.push( uri.path );
+
+            Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
+                // `constructor` causing problems reading and is irrelevant for stats parsing
+                if (symbolKey === 'constructor') {
                     return;
                 }
-            })
-            .then(() => {
-                const includePattern: vscode.GlobPattern = '*.ts';
-                const excludePattern: vscode.GlobPattern = '*.{po,spec,d}.ts';
-                return vscode.workspace.findFiles(`**/${includePattern}`, `**/${excludePattern}`, 50).then((uris: vscode.Uri[]) => {
-                    if (!uris || uris.length === 0) {
-                        throw new Error(`No files found with extension '${includePattern}'.`);
-                    }
-                    return uris;
-                });
-            })
-            .then((uris: vscode.Uri[]) => {
-
-                const mydata: DocumentNodeIndex = {
-                    projectName: userInputData.projectName!,
-                    documentsParsed: [],
-                    stats: {},
-                };
-
-                const tasks: Thenable<void>[] = uris.map(uri => {
-                    return (vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', vscode.Uri.file(vscode.window.activeTextEditor!.document.fileName)) as Thenable<vscode.DocumentSymbol[]>)
-                        .then((symbols: vscode.DocumentSymbol[]) => {
-
-                            const parsedData = processDocumentEntry(uri.path, symbols, 0);
-                            // mydata.documents.push( parsedData );
-                            mydata.documentsParsed!.push( uri.path );
-
-                            Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
-                                // `constructor` causing problems reading and is irrelevant for stats parsing
-                                if (symbolKey === 'constructor') {
-                                    return;
-                                }
-                                if (mydata.stats[symbolKey]) {
-                                    mydata.stats[symbolKey] = mydata.stats[symbolKey] + occurrences;
-                                } else {
-                                    mydata.stats[symbolKey] = occurrences;
-                                }
-                                
-                            });
-                            return;
-                    });
-                });
-                return Promise.all(tasks)
-                    .then(() => mydata);
-
-            })
-            .then((mydata: DocumentNodeIndex) => {
-                console.log( '!!! mydata:', JSON.stringify(mydata, null, 4) );
+                if (mydata.stats[symbolKey]) {
+                    mydata.stats[symbolKey] = mydata.stats[symbolKey] + occurrences;
+                } else {
+                    mydata.stats[symbolKey] = occurrences;
+                }
                 
-                // vscode.workspace.openTextDocument({ content: JSON.stringify(mydata, null, 4) }).then(doc => {
-                    // vscode.window.showTextDocument(doc);
-    
-                    // if (vscode.window.registerWebviewPanelSerializer) {
-                    //     // Make sure we register a serializer in activation event
-                    //     vscode.window.registerWebviewPanelSerializer(MainCodingPanel.viewType, {
-                    //         async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, state: any) {
-                    //             console.log(`Got state: ${state}`);
-                    //             // // Reset the webview options so we use latest uri for `localResourceRoots`.
-                    //             // webviewPanel.webview.options = getWebviewOptions(context.extensionUri);
-                    //             MainCodingPanel.revive(webviewPanel, context.extensionUri);
-                    //         }
-                    //     });
-                    // }
-                // });
             });
+        });
+        await Promise.all(tasks);
 
-        
+        console.log( '!!! mydata:', JSON.stringify(mydata, null, 4) );
+                
+        // vscode.workspace.openTextDocument({ content: JSON.stringify(mydata, null, 4) }).then(doc => {
+            // vscode.window.showTextDocument(doc);
+
+            // if (vscode.window.registerWebviewPanelSerializer) {
+            //     // Make sure we register a serializer in activation event
+            //     vscode.window.registerWebviewPanelSerializer(MainCodingPanel.viewType, {
+            //         async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, state: any) {
+            //             console.log(`Got state: ${state}`);
+            //             // // Reset the webview options so we use latest uri for `localResourceRoots`.
+            //             // webviewPanel.webview.options = getWebviewOptions(context.extensionUri);
+            //             MainCodingPanel.revive(webviewPanel, context.extensionUri);
+            //         }
+            //     });
+            // }
+        // });
     });
     
     context.subscriptions.push(disposable);

@@ -1,5 +1,5 @@
 export interface DocumentNodeIndex {
-    projectName: string;
+    projectName: string | null;
     documentsParsed: string[];
     stats: {
         [key: string]: number;
