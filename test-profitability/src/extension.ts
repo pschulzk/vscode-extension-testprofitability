@@ -1,54 +1,54 @@
 // The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
+// Import the module and reference it with the alias vscode in code below
 import path = require('path');
+import { TextEncoder } from 'util';
 import * as vscode from 'vscode';
 import { DocumentNodeEntry, DocumentNodeIndex } from './DocumentNodeIndex';
 import SymbolKinds from './SymbolKinds';
 
-function processDocumentEntry(path: string, symbols: vscode.DocumentSymbol[], depth: number, documentNodeEntry?: DocumentNodeEntry): DocumentNodeEntry {
-    
+const PARSE_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '*.ts';
+const PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '*.{po,spec,d}.ts';
+
+function processDocumentEntry(
+    path: string,
+    symbols: vscode.DocumentSymbol[],
+    depth: number,
+    documentNodeEntry?: DocumentNodeEntry,
+): DocumentNodeEntry {
     let _documentNodeEntry: DocumentNodeEntry;
     if (!documentNodeEntry) {
         _documentNodeEntry = {
             path,
             documentNodes: {},
         };
-        // SymbolKinds.forEach(s => _documentNodeEntry.documentNodes[s] = []);
         SymbolKinds.forEach(s => _documentNodeEntry.documentNodes[s] = 0);
     } else {
         _documentNodeEntry = documentNodeEntry;
     }
-    
-
+    if (!Array.isArray(symbols) || symbols.length === 0) {
+        return _documentNodeEntry;
+    }
     for (const symbol of symbols) {
-        // store amount of symbol in index
         const currentKey = `${SymbolKinds[symbol.kind]}`;
-        // _documentNodeEntry.documentNodes[currentKey].push(symbol.name);
         _documentNodeEntry.documentNodes[currentKey]++;
-
         if (symbol.children) {
             processDocumentEntry(path, symbol.children, depth + 1, _documentNodeEntry);
         }
     }
-
     return _documentNodeEntry;
 }
 
-// this method is called when your extension is activated
-// your extension is activated the very first time the command is executed
+// this method is called when extension is activated
+// extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
     
     // Use the console to output diagnostic information (console.log) and errors (console.error)
-    // This line of code will only be executed once when your extension is activated
-    console.log('Extension "test-profitability" is now active!');
+    // This line of code will only be executed once when extension is activated
+    console.log('Extension "test-profitability" is now active.');
     
-    // The command has been defined in the package.json file
-    // Now provide the implementation of the command with registerCommand
-    // The commandId parameter must match the command field in package.json
+    // command `parseWorkspace`
     const disposable = vscode.commands.registerCommand('test-profitability.parseWorkspace', async () => {
-
         let undoStopBefore = true;
-        // const rootFolderUri: vscode.Uri = vscode.window.activeTextEditor.document.fileName;
         const userTextInputOptions: vscode.InputBoxOptions = {
             placeHolder: '',
             validateInput: (param: string) => {
@@ -57,47 +57,37 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             },
         };
-        const includePattern: vscode.GlobPattern = '*.ts';
-        const excludePattern: vscode.GlobPattern = '*.{po,spec,d}.ts';
         const mydata: DocumentNodeIndex = {
             projectName: null,
             documentsParsed: [],
             stats: {},
         };
 
-        // The code you place here will be executed every time your command is executed
-        // Display a message box to the user
-        vscode.window.showInformationMessage(`!!! Extension 'test-profitability' .`);
-        
-        if (!vscode.window.activeTextEditor) {
-            vscode.window.showWarningMessage('There must be an active text editor');
-            return;
-        }
-
-        const userInput: unknown = await vscode.window.showInputBox(userTextInputOptions);
+        const userInput: string | undefined = await vscode.window.showInputBox(userTextInputOptions);
         if (!userInput || typeof userInput !== 'string') {
             // undo
             if (!undoStopBefore) {
                 vscode.commands.executeCommand('undo');
             }
-            throw new Error(`ERROR: invalid input string for projectName!`);
+            vscode.window.showWarningMessage('Invalid input string for projectName.');
+            return;
         } else {
             mydata.projectName = userInput;
         }
         
-        const uris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${includePattern}`, `**/${excludePattern}`, 5);
+        const uris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${PARSE_FILE_PATTERN_INCLUDE}`, `**/${PARSE_FILE_PATTERN_EXCLUDE}`, 5);
         if (!uris || uris.length === 0) {
-            throw new Error(`No files found with extension '${includePattern}'.`);
+            vscode.window.showWarningMessage(`No files found with extension '${PARSE_FILE_PATTERN_INCLUDE}'.`);
+            return;
         }
 
         const tasks: Thenable<void>[] = uris.map(async (uri: vscode.Uri) => {
-            const symbols: vscode.DocumentSymbol[] = await (vscode.commands.executeCommand(
+            const symbols: vscode.DocumentSymbol[] = await vscode.commands.executeCommand(
                 'vscode.executeDocumentSymbolProvider',
-                vscode.Uri.file(vscode.window.activeTextEditor!.document.fileName)
-            ) as Thenable<vscode.DocumentSymbol[]>);
-
+                uri,
+            );
             const parsedData = processDocumentEntry(uri.path, symbols, 0);
-            mydata.documentsParsed!.push( uri.path );
+            mydata.documentsParsed.push(uri.path);
 
             Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
                 // `constructor` causing problems reading and is irrelevant for stats parsing
@@ -109,13 +99,34 @@ export function activate(context: vscode.ExtensionContext) {
                 } else {
                     mydata.stats[symbolKey] = occurrences;
                 }
-                
             });
         });
         await Promise.all(tasks);
 
-        console.log( '!!! mydata:', JSON.stringify(mydata, null, 4) );
-                
+        // console.log( '!!! mydata:', JSON.stringify(mydata, null, 4) );
+
+        if (!Array.isArray(vscode.workspace.workspaceFolders) || vscode.workspace.workspaceFolders.length === 0) {
+            vscode.window.showWarningMessage('No workspace folders. Add at least one folder to workspace.');
+            return;
+        }
+        const myDataAsText = JSON.stringify(mydata, null, 4);
+        vscode.workspace.workspaceFolders.forEach(async (wsUri: vscode.WorkspaceFolder) => {
+            const newUri = vscode.Uri.from({
+                scheme: wsUri.uri.scheme,
+                path: `${wsUri.uri.path}/${mydata.projectName}.json`,
+            });
+            await vscode.workspace.fs.writeFile(newUri, new TextEncoder().encode(myDataAsText));
+            vscode.window.showTextDocument(newUri, { preview: false });
+        });
+
+    });
+    
+    context.subscriptions.push(disposable);
+}
+
+// this method is called when extension is deactivated
+export function deactivate() {}
+
         // vscode.workspace.openTextDocument({ content: JSON.stringify(mydata, null, 4) }).then(doc => {
             // vscode.window.showTextDocument(doc);
 
@@ -131,14 +142,6 @@ export function activate(context: vscode.ExtensionContext) {
             //     });
             // }
         // });
-    });
-    
-    context.subscriptions.push(disposable);
-}
-
-// this method is called when your extension is deactivated
-export function deactivate() {}
-
 
 /**
 * Manages cat coding webview panels
