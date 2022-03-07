@@ -1,9 +1,12 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in code below
-import path = require('path');
+// import { API as GitAPI, GitExtension, APIState } from './typings/git';
 import * as vscode from 'vscode';
+// import simpleGit, { CleanOptions, Options, SimpleGit, TaskOptions } from 'simple-git';
 import { DocumentNodeEntry, DocumentNodeIndex, DocumentNodeIndexSnapShot } from './DocumentNodeIndex';
 import SymbolKinds from './SymbolKinds';
+// import { Git } from 'git';
+import * as Git from 'git';
 
 const OPTION_LIST_PARSED_FILES_PATHS: boolean = false;
 const PARSE_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '*.ts';
@@ -46,7 +49,7 @@ async function createSnapshot(): Promise<DocumentNodeIndexSnapShot> {
         stats: {},
     };
 
-    const matchedFilesUris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${PARSE_FILE_PATTERN_INCLUDE}`, `**/${PARSE_FILE_PATTERN_EXCLUDE}`, 5);
+    const matchedFilesUris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${PARSE_FILE_PATTERN_INCLUDE}`, `**/${PARSE_FILE_PATTERN_EXCLUDE}`, 50);
     if (!matchedFilesUris || matchedFilesUris.length === 0) {
         vscode.window.showWarningMessage(`No files found with inclusive pattern "${PARSE_FILE_PATTERN_INCLUDE}" and exclusive pattern "${PARSE_FILE_PATTERN_EXCLUDE}".`);
         return snapShot;
@@ -140,6 +143,66 @@ async function commandParseWorkspace(): Promise<void> {
     // });
 }
 
+async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
+    let undoStopBefore = true;
+    const showInputBoxOptions: vscode.InputBoxOptions = {
+        placeHolder: '',
+        validateInput: (param: string) => {
+            if (!param) {
+                return 'Syntax error. Provide valid string';
+            }
+        },
+    };
+    const mydata: DocumentNodeIndex = {};
+
+    const userInputProjectName: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
+    if (!userInputProjectName || typeof userInputProjectName !== 'string') {
+        // undo
+        if (!undoStopBefore) {
+            vscode.commands.executeCommand('undo');
+        }
+        vscode.window.showErrorMessage('Invalid input string for projectName.');
+        return;
+    } else {
+        mydata.projectName = userInputProjectName;
+    }
+
+    if (!Array.isArray(vscode.workspace.workspaceFolders) || vscode.workspace.workspaceFolders.length === 0) {
+        vscode.window.showErrorMessage('No workspace folders. Add at least one folder to workspace.');
+        return;
+    }
+
+    mydata.currentState = await createSnapshot();
+    const myDataAsText = JSON.stringify(mydata, null, 4);
+
+    // const gitExtension = vscode.extensions.getExtension('vscode.git')!.exports;
+    // const api = gitExtension.getAPI(1);
+    // const repo = api.repositories[0];
+    // await repo.checkout('hotfix-ada');
+
+    const mainWorkspaceFolderUri: vscode.WorkspaceFolder = vscode.workspace.workspaceFolders[0];
+    // const git: SimpleGit = simpleGit(mainWorkspaceFolderUri.uri.path);
+    // const git: Git = new Git(mainWorkspaceFolderUri.uri.path);
+    // git.rev_list(
+    //     {
+    //         'maxCount': 1,
+    //         'before': '2019-01-01 00:00',
+    //         'branch': 'dev',
+    //     },
+    //     (gitRes: any) => console.log( '!!! gitRes:', JSON.stringify(gitRes, null, 4) ),
+    // );
+
+    // git checkout `git rev-list --max-count=1 --before="${checkYear}-${checkMonth}-01 00:00" dev`
+    // git checkout `git rev-list --max-count=1 --before="2019-01-01 00:00" dev`
+    // git.rev
+    // git.checkout('hotfix-ada', (gitres) => console.log( '!!! gitres:', JSON.stringify(gitres, null, 4) ));
+
+    // show results
+    vscode.workspace.openTextDocument({ content: myDataAsText }).then(doc => {
+        vscode.window.showTextDocument(doc);
+    });
+}
+
 // this method is called when extension is activated
 // extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -149,8 +212,11 @@ export function activate(context: vscode.ExtensionContext) {
     
     // command `parseWorkspace`
     const disposableCommandParseWorkspace = vscode.commands.registerCommand('test-profitability.parseWorkspace', commandParseWorkspace);
-    
     context.subscriptions.push(disposableCommandParseWorkspace);
+
+    // command `commandParseWorkspaceSnapshotsGit`
+    const disposableCommandParseWorkspaceSnapshotsGit = vscode.commands.registerCommand('test-profitability.commandParseWorkspaceSnapshotsGit', commandParseWorkspaceSnapshotsGit);
+    context.subscriptions.push(disposableCommandParseWorkspaceSnapshotsGit);
 
     // open webview
     // if (vscode.window.registerWebviewPanelSerializer) {
