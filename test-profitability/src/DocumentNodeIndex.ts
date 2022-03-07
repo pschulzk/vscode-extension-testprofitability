@@ -1,6 +1,12 @@
 export interface DocumentNodeIndex {
-    projectName: string | null;
-    documentsParsed: string[];
+    projectName?: string;
+    currentState?: DocumentNodeIndexSnapShot;
+    snapShots?: DocumentNodeIndexSnapShot[]; 
+}
+
+export interface DocumentNodeIndexSnapShot {
+    documentsParsedPaths?: string[];
+    documentsParsedAmount: number;
     stats: {
         [key: string]: number;
     };
@@ -9,7 +15,6 @@ export interface DocumentNodeIndex {
 export interface DocumentNodeEntry {
     path: string;
     documentNodes: {
-        // [key: string]: string[];
         [key: string]: number;
     };
 }

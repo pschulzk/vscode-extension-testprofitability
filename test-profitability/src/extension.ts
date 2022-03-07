@@ -1,13 +1,14 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in code below
 import path = require('path');
-import { TextEncoder } from 'util';
 import * as vscode from 'vscode';
-import { DocumentNodeEntry, DocumentNodeIndex } from './DocumentNodeIndex';
+import { DocumentNodeEntry, DocumentNodeIndex, DocumentNodeIndexSnapShot } from './DocumentNodeIndex';
 import SymbolKinds from './SymbolKinds';
 
+const OPTION_LIST_PARSED_FILES_PATHS: boolean = false;
 const PARSE_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '*.ts';
-const PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '*.{po,spec,d}.ts';
+const PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '*{.|-}{po,spec,d}.ts';
+// const PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '**/{node_modules/**}?/*.{po,spec,d}.ts';
 
 function processDocumentEntry(
     path: string,
@@ -38,118 +39,143 @@ function processDocumentEntry(
     return _documentNodeEntry;
 }
 
+async function createSnapshot(): Promise<DocumentNodeIndexSnapShot> {
+    const snapShot: DocumentNodeIndexSnapShot = {
+        ...( OPTION_LIST_PARSED_FILES_PATHS && ({ documentsParsedPaths: [] }) ),
+        documentsParsedAmount: 0,
+        stats: {},
+    };
+
+    const matchedFilesUris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${PARSE_FILE_PATTERN_INCLUDE}`, `**/${PARSE_FILE_PATTERN_EXCLUDE}`, 5);
+    if (!matchedFilesUris || matchedFilesUris.length === 0) {
+        vscode.window.showWarningMessage(`No files found with inclusive pattern "${PARSE_FILE_PATTERN_INCLUDE}" and exclusive pattern "${PARSE_FILE_PATTERN_EXCLUDE}".`);
+        return snapShot;
+    }
+
+    const tasks: Thenable<void>[] = matchedFilesUris.map(async (uri: vscode.Uri) => {
+        const symbols: vscode.DocumentSymbol[] = await vscode.commands.executeCommand(
+            'vscode.executeDocumentSymbolProvider',
+            uri,
+        );
+        const parsedData = processDocumentEntry(uri.path, symbols, 0);
+        if (OPTION_LIST_PARSED_FILES_PATHS) {
+            snapShot.documentsParsedPaths!.push(uri.path);   
+        }
+        snapShot.documentsParsedAmount++;
+
+        Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
+            // `constructor` causing problems reading and is irrelevant for stats parsing
+            if (symbolKey === 'constructor') {
+                return;
+            }
+            if (snapShot.stats[symbolKey]) {
+                snapShot.stats[symbolKey] = snapShot.stats[symbolKey] + occurrences;
+            } else {
+                snapShot.stats[symbolKey] = occurrences;
+            }
+        });
+    });
+    await Promise.all(tasks);
+
+    return snapShot;
+}
+
+async function commandParseWorkspace(): Promise<void> {
+    let undoStopBefore = true;
+    const showInputBoxOptions: vscode.InputBoxOptions = {
+        placeHolder: '',
+        validateInput: (param: string) => {
+            if (!param) {
+                return 'Syntax error. Provide valid string';
+            }
+        },
+    };
+    const mydata: DocumentNodeIndex = {};
+
+    const userInputProjectName: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
+    if (!userInputProjectName || typeof userInputProjectName !== 'string') {
+        // undo
+        if (!undoStopBefore) {
+            vscode.commands.executeCommand('undo');
+        }
+        vscode.window.showErrorMessage('Invalid input string for projectName.');
+        return;
+    } else {
+        mydata.projectName = userInputProjectName;
+    }
+
+    if (!Array.isArray(vscode.workspace.workspaceFolders) || vscode.workspace.workspaceFolders.length === 0) {
+        vscode.window.showErrorMessage('No workspace folders. Add at least one folder to workspace.');
+        return;
+    }
+
+    mydata.currentState = await createSnapshot();
+    const myDataAsText = JSON.stringify(mydata, null, 4);
+
+    // show results
+    vscode.workspace.openTextDocument({ content: myDataAsText }).then(doc => {
+        vscode.window.showTextDocument(doc);
+    });
+
+    // get save folder target uri from user
+    // const defaultUri = vscode.workspace.workspaceFolders[0];
+    // const showOpenDialogOptions: vscode.OpenDialogOptions = {
+    //     defaultUri,
+    //     openLabel: '',
+    //     canSelectFiles: false,
+    //     canSelectFolders: true,
+    //     canSelectMany: false,
+    //     title: '',
+    // };
+    // const userInputSaveToFolderUri: vscode.Uri[] | undefined = await vscode.window.showOpenDialog();
+
+    // save results
+    // vscode.workspace.workspaceFolders.forEach(async (wsUri: vscode.WorkspaceFolder) => {
+    //     const newUri = vscode.Uri.from({
+    //         scheme: wsUri.uri.scheme,
+    //         path: `${wsUri.uri.path}/${mydata.projectName}.json`,
+    //     });
+    //     await vscode.workspace.fs.writeFile(newUri, new TextEncoder().encode(myDataAsText));
+    //     vscode.window.showTextDocument(newUri, { preview: false });
+    // });
+}
+
 // this method is called when extension is activated
 // extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
     
-    // Use the console to output diagnostic information (console.log) and errors (console.error)
     // This line of code will only be executed once when extension is activated
     console.log('Extension "test-profitability" is now active.');
     
     // command `parseWorkspace`
-    const disposable = vscode.commands.registerCommand('test-profitability.parseWorkspace', async () => {
-        let undoStopBefore = true;
-        const userTextInputOptions: vscode.InputBoxOptions = {
-            placeHolder: '',
-            validateInput: (param: string) => {
-                if (!param) {
-                    return 'Syntax error. Provide valid string';
-                }
-            },
-        };
-        const mydata: DocumentNodeIndex = {
-            projectName: null,
-            documentsParsed: [],
-            stats: {},
-        };
-
-        const userInput: string | undefined = await vscode.window.showInputBox(userTextInputOptions);
-        if (!userInput || typeof userInput !== 'string') {
-            // undo
-            if (!undoStopBefore) {
-                vscode.commands.executeCommand('undo');
-            }
-            vscode.window.showWarningMessage('Invalid input string for projectName.');
-            return;
-        } else {
-            mydata.projectName = userInput;
-        }
-        
-        const uris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${PARSE_FILE_PATTERN_INCLUDE}`, `**/${PARSE_FILE_PATTERN_EXCLUDE}`, 5);
-        if (!uris || uris.length === 0) {
-            vscode.window.showWarningMessage(`No files found with extension '${PARSE_FILE_PATTERN_INCLUDE}'.`);
-            return;
-        }
-
-        const tasks: Thenable<void>[] = uris.map(async (uri: vscode.Uri) => {
-            const symbols: vscode.DocumentSymbol[] = await vscode.commands.executeCommand(
-                'vscode.executeDocumentSymbolProvider',
-                uri,
-            );
-            const parsedData = processDocumentEntry(uri.path, symbols, 0);
-            mydata.documentsParsed.push(uri.path);
-
-            Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
-                // `constructor` causing problems reading and is irrelevant for stats parsing
-                if (symbolKey === 'constructor') {
-                    return;
-                }
-                if (mydata.stats[symbolKey]) {
-                    mydata.stats[symbolKey] = mydata.stats[symbolKey] + occurrences;
-                } else {
-                    mydata.stats[symbolKey] = occurrences;
-                }
-            });
-        });
-        await Promise.all(tasks);
-
-        // console.log( '!!! mydata:', JSON.stringify(mydata, null, 4) );
-
-        if (!Array.isArray(vscode.workspace.workspaceFolders) || vscode.workspace.workspaceFolders.length === 0) {
-            vscode.window.showWarningMessage('No workspace folders. Add at least one folder to workspace.');
-            return;
-        }
-        const myDataAsText = JSON.stringify(mydata, null, 4);
-        vscode.workspace.workspaceFolders.forEach(async (wsUri: vscode.WorkspaceFolder) => {
-            const newUri = vscode.Uri.from({
-                scheme: wsUri.uri.scheme,
-                path: `${wsUri.uri.path}/${mydata.projectName}.json`,
-            });
-            await vscode.workspace.fs.writeFile(newUri, new TextEncoder().encode(myDataAsText));
-            vscode.window.showTextDocument(newUri, { preview: false });
-        });
-
-    });
+    const disposableCommandParseWorkspace = vscode.commands.registerCommand('test-profitability.parseWorkspace', commandParseWorkspace);
     
-    context.subscriptions.push(disposable);
+    context.subscriptions.push(disposableCommandParseWorkspace);
+
+    // open webview
+    // if (vscode.window.registerWebviewPanelSerializer) {
+    //     // Make sure we register a serializer in activation event
+    //     vscode.window.registerWebviewPanelSerializer(MainCodingPanel.viewType, {
+    //         async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, state: any) {
+    //             console.log(`Got state: ${state}`);
+    //             // // Reset the webview options so we use latest uri for `localResourceRoots`.
+    //             // webviewPanel.webview.options = getWebviewOptions(context.extensionUri);
+    //             MainCodingPanel.revive(webviewPanel, context.extensionUri);
+    //         }
+    //     });
+    // }
 }
 
 // this method is called when extension is deactivated
 export function deactivate() {}
 
-        // vscode.workspace.openTextDocument({ content: JSON.stringify(mydata, null, 4) }).then(doc => {
-            // vscode.window.showTextDocument(doc);
-
-            // if (vscode.window.registerWebviewPanelSerializer) {
-            //     // Make sure we register a serializer in activation event
-            //     vscode.window.registerWebviewPanelSerializer(MainCodingPanel.viewType, {
-            //         async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, state: any) {
-            //             console.log(`Got state: ${state}`);
-            //             // // Reset the webview options so we use latest uri for `localResourceRoots`.
-            //             // webviewPanel.webview.options = getWebviewOptions(context.extensionUri);
-            //             MainCodingPanel.revive(webviewPanel, context.extensionUri);
-            //         }
-            //     });
-            // }
-        // });
-
 /**
-* Manages cat coding webview panels
-*/
+ * Manages webview panels
+ */
 class MainCodingPanel {
     /**
-    * Track the currently panel. Only allow a single panel to exist at a time.
-    */
+     * Track the currently panel. Only allow a single panel to exist at a time.
+     */
     public static currentPanel: MainCodingPanel | undefined;
     
     public static readonly viewType = 'catCoding';
