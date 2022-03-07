@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { DocumentNodeEntry, DocumentNodeIndex, DocumentNodeIndexSnapShot } from './DocumentNodeIndex';
 import SymbolKinds from './SymbolKinds';
 // import { Git } from 'git';
-import * as Git from 'git';
+// import * as Git from 'git';
 
 const OPTION_LIST_PARSED_FILES_PATHS: boolean = false;
 const PARSE_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '*.ts';
