@@ -3,6 +3,11 @@ import * as vscode from 'vscode';
 import { DocumentNodeEntry, DocumentNodeIndexSnapShot } from './DocumentNodeIndex';
 import SymbolKinds from './SymbolKinds';
 
+/**
+ * ## getDateFormatted
+ * @param convertDate 
+ * @returns 
+ */
 export function getDateFormatted(convertDate: Date = new Date()): string {
     const yyyy = convertDate.getFullYear();
     const mm = convertDate.getMonth() + 1; // Months start at 0!
@@ -10,6 +15,14 @@ export function getDateFormatted(convertDate: Date = new Date()): string {
     return `${yyyy}-${mm}-${dd}`;
 }
 
+/**
+ * ## processDocumentEntry
+ * @param path absolute path of file parsed
+ * @param symbols AST categories
+ * @param depth depth lvel within AST
+ * @param documentNodeEntry object to be enriched with data
+ * @returns object enriched with data parsed from AST
+ */
 export function processDocumentEntry(
     path: string,
     symbols: vscode.DocumentSymbol[],
@@ -39,56 +52,117 @@ export function processDocumentEntry(
     return _documentNodeEntry;
 }
 
-export async function createSnapshot(
+/**
+ * ## createSnapshot
+ * @param snapshotDate date formatted as string of `YYYY-mm-dd`
+ * @param parseAppFilePatternInclude glob pattern to include functional application files
+ * @param parseAppFilePatternExclude glob pattern to exclude functional application files
+ * @param parseTestFilePatternInclude glob pattern to include test application files
+ * @param parseCoverageStats if TRUE, files matching `parseTestFilePatternInclude` will be included
+ * @param listParsedAppFiles if TRUE, filesystem path strings of parsed files will be included
+ * @returns snapshot of parsed application profile
+ */
+export async function createSnapshot(opts: {
     snapshotDate: string,
-    parseFilePatternInclude: vscode.GlobPattern,
-    parseFilePatternExclude: vscode.GlobPattern,
-    listParsedFiles: boolean = false,
-): Promise<DocumentNodeIndexSnapShot> {
+    parseAppFilePatternInclude: vscode.GlobPattern,
+    parseAppFilePatternExclude: vscode.GlobPattern,
+    parseTestFilePatternInclude?: vscode.GlobPattern,
+    parseCoverageStats?: boolean,
+    listParsedAppFiles?: boolean,
+}): Promise<DocumentNodeIndexSnapShot> {
     const snapShot: DocumentNodeIndexSnapShot = {
-        snapshotDate,
-        ...( listParsedFiles && ({ documentsParsedPaths: [] }) ),
-        documentsParsedAmount: 0,
-        stats: {},
+        snapshotDate: opts.snapshotDate,
+        applicationStats: {
+            documentsParsedPaths: [],
+            documentsParsedAmount: 0,
+            stats: {},
+        },
+        ...( opts.listParsedAppFiles && ({coverageStats: {
+            documentsParsedPaths: [],
+            documentsParsedAmount: 0,
+            stats: {},
+        }})),
     };
 
-    const matchedFilesUris: vscode.Uri[] = await vscode.workspace.findFiles(parseFilePatternInclude, parseFilePatternExclude, 70);
-    if (!matchedFilesUris || matchedFilesUris.length === 0) {
-        vscode.window.showWarningMessage(`No files found with inclusive pattern "${parseFilePatternInclude}" and exclusive pattern "${parseFilePatternExclude}".`);
+    const matchedFilesUrisApp: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseAppFilePatternInclude, opts.parseAppFilePatternExclude, 50);
+    if (!matchedFilesUrisApp || matchedFilesUrisApp.length === 0) {
+        vscode.window.showWarningMessage(`No files found with inclusive pattern "${opts.parseAppFilePatternInclude}" and exclusive pattern "${opts.parseAppFilePatternExclude}".`);
         return snapShot;
     }
 
-    const tasks: Thenable<void>[] = matchedFilesUris.map(async (uri: vscode.Uri) => {
+    // parse application stats
+    const tasksApp: Thenable<void>[] = matchedFilesUrisApp.map(async (uri: vscode.Uri) => {
         const symbols: vscode.DocumentSymbol[] = await vscode.commands.executeCommand(
             'vscode.executeDocumentSymbolProvider',
             uri,
         );
         const parsedData = processDocumentEntry(uri.path, symbols, 0);
-        if (listParsedFiles) {
-            snapShot.documentsParsedPaths!.push(uri.path);   
+        if (opts.listParsedAppFiles) {
+            snapShot.applicationStats!.documentsParsedPaths!.push(uri.path);   
         }
-        snapShot.documentsParsedAmount++;
+        snapShot.applicationStats!.documentsParsedAmount++;
 
         Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
             // `constructor` causing problems reading and is irrelevant for stats parsing
             if (symbolKey === 'constructor') {
                 return;
             }
-            if (snapShot.stats[symbolKey]) {
-                snapShot.stats[symbolKey] = snapShot.stats[symbolKey] + occurrences;
+            if (snapShot.applicationStats!.stats[symbolKey]) {
+                snapShot.applicationStats!.stats[symbolKey] = snapShot.applicationStats!.stats[symbolKey] + occurrences;
             } else {
-                snapShot.stats[symbolKey] = occurrences;
+                snapShot.applicationStats!.stats[symbolKey] = occurrences;
             }
         });
     });
 
+    // parse application coverage
+    let tasksCoverage: Thenable<void>[] = [];
+    if (opts.parseCoverageStats && opts.parseTestFilePatternInclude) {
+        const matchedFilesUrisCoverage: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseTestFilePatternInclude, null, 50);
+        if (!matchedFilesUrisCoverage || matchedFilesUrisCoverage.length === 0) {
+            vscode.window.showWarningMessage(`No test files found with inclusive pattern "${opts.parseTestFilePatternInclude}".`);
+            return snapShot;
+        }
+        tasksCoverage = matchedFilesUrisCoverage.map(async (uri: vscode.Uri) => {
+            const symbols: vscode.DocumentSymbol[] = await vscode.commands.executeCommand(
+                'vscode.executeDocumentSymbolProvider',
+                uri,
+            );
+            const parsedData = processDocumentEntry(uri.path, symbols, 0);
+            if (opts.listParsedAppFiles) {
+                snapShot.coverageStats!.documentsParsedPaths!.push(uri.path);   
+            }
+            snapShot.coverageStats!.documentsParsedAmount++;
+    
+            Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
+                // `constructor` causing problems reading and is irrelevant for stats parsing
+                if (symbolKey === 'constructor') {
+                    return;
+                }
+                if (snapShot.coverageStats!.stats[symbolKey]) {
+                    snapShot.coverageStats!.stats[symbolKey] = snapShot.coverageStats!.stats[symbolKey] + occurrences;
+                } else {
+                    snapShot.coverageStats!.stats[symbolKey] = occurrences;
+                }
+            });
+        });
+    }
+
+    const allTasks: Thenable<void>[] = [ ...tasksApp ];
+    if (opts.parseCoverageStats && tasksCoverage.length > 0) {
+        allTasks.concat(tasksCoverage);
+    }
     await showLoadingInProgress(async () => {
-        await Promise.all(tasks);
+        await Promise.all(allTasks);
     });
 
     return snapShot;
 }
 
+/**
+ * ## showLoadingInProgress
+ * @param asyncFn async method triggering loading indicator until completed
+ */
 export async function showLoadingInProgress(asyncFn: () => Promise<void>): Promise<void> {
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Window,
@@ -100,37 +174,74 @@ export async function showLoadingInProgress(asyncFn: () => Promise<void>): Promi
         progress.report({ increment: 100 });
     });
 }
-export function scmGitCleanup(workspaceFolderUri: vscode.WorkspaceFolder, branch: string): void {
+
+/**
+ * ## scmGitCleanup
+ * @param workspaceFolder object containing root file system location of repository
+ * @param branch name of Git branch
+ */
+export function scmGitCleanup(
+    workspaceFolder: vscode.WorkspaceFolder,
+    branch: string,
+): void {
     const procGitCheckout: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['checkout', branch], {
-        cwd: workspaceFolderUri.uri.path
+        cwd: workspaceFolder.uri.path
     });
     console.log('!!! scmGitCleanup: ' + String(procGitCheckout.stdout));
 }
-export function scmGitCheckoutBefore(workspaceFolderUri: vscode.WorkspaceFolder, branch: string, year: string, month: string): void {
+
+/**
+ * ## scmGitCheckoutBefore
+ * @param workspaceFolder object containing root file system location of repository
+ * @param branch name of Git branch
+ * @param year Search for commit near to year as string, e. g. `'2017'`
+ * @param month Search for commit near to month as string, e. g. `'03'`
+ */
+export function scmGitCheckoutBefore(
+    workspaceFolder: vscode.WorkspaceFolder,
+    branch: string,
+    year: string,
+    month: string,
+): void {
     console.log( `!!! scmGitCheckoutBefore.year, month:`, year, month );
-    scmGitCleanup(workspaceFolderUri, branch);
+    scmGitCleanup(workspaceFolder, branch);
     const procGitRevList: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['rev-list', '--max-count=1', `--before="${year}-${month}-01 00:00"`, 'dev'], {
-        cwd: workspaceFolderUri.uri.path
+        cwd: workspaceFolder.uri.path
     });
     const procGitCheckout: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['checkout', String(procGitRevList.stdout)], {
-        cwd: workspaceFolderUri.uri.path
+        cwd: workspaceFolder.uri.path
     });
     console.log('!!! scmGitCheckoutBefore: ' + String(procGitCheckout.stdout));
 }
-export async function extractRepositoryData(
+/**
+ * ## extractRepositoryData
+ * @param workspaceFolder object containing root file system location of repository
+ * @param branch name of Git branch
+ * @param startYear Search for commit near to year as string, e. g. `'2017'`
+ * @param startMonth Search for commit near to month as string, e. g. `'03'`
+ * @param parseAppFilePatternInclude glob pattern to include functional application files
+ * @param parseAppFilePatternExclude glob pattern to exclude functional application files
+ * @param parseTestFilePatternInclude glob pattern to include test application files
+ * @param parseCoverageStats if TRUE, files matching `parseTestFilePatternInclude` will be included
+ * @param listParsedAppFiles if TRUE, filesystem path strings of parsed files will be included
+ * @returns 
+ */
+export async function extractRepositoryData(opts: {
     workspaceFolderUri: vscode.WorkspaceFolder,
     branch: string,
     startYear: string,
     startMonth: string,
-    parseFilePatternInclude: vscode.GlobPattern,
-    parseFilePatternExclude: vscode.GlobPattern,
-    listParsedFiles: boolean = false,
-): Promise<DocumentNodeIndexSnapShot[]> {
+    parseAppFilePatternInclude: vscode.GlobPattern,
+    parseAppFilePatternExclude: vscode.GlobPattern,
+    parseTestFilePatternInclude?: vscode.GlobPattern,
+    parseCoverageStats?: boolean,
+    listParsedFiles?: boolean,
+}): Promise<DocumentNodeIndexSnapShot[]> {
     const retVal: DocumentNodeIndexSnapShot[] = [];
 
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
-    const startDate = new Date(`${startYear}-${startMonth}-01`);
+    const startDate = new Date(`${opts.startYear}-${opts.startMonth}-01`);
     const endDate = new Date(`${currentYear}-${currentMonth}-01`);
 
     await showLoadingInProgress(async () => {
@@ -141,16 +252,16 @@ export async function extractRepositoryData(
             // scmGitCheckoutBefore(workspaceFolderUri, branch, currentYear, currentMonth);
     
             // get software complexity data
-            const snapshotData = await createSnapshot(
-                getDateFormatted(loop),
-                parseFilePatternInclude,
-                parseFilePatternExclude,
-                listParsedFiles,
-            );
+            const snapshotData = await createSnapshot({
+                snapshotDate: getDateFormatted(loop),
+                parseAppFilePatternInclude: opts.parseAppFilePatternInclude,
+                parseAppFilePatternExclude: opts.parseAppFilePatternExclude,
+                parseTestFilePatternInclude: opts.parseTestFilePatternInclude,
+                parseCoverageStats: opts.parseCoverageStats,
+                listParsedAppFiles: opts.listParsedFiles,
+            });
             retVal.push(snapshotData);
-            // TODO: get software test coverage data
-            
-            // const newDate = loop.setDate(loop.getDate() + 1);
+
             const newDate = new Date(loop.setMonth(loop.getMonth() + 1));
             loop = new Date(newDate);
         }

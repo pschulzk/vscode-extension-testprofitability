@@ -5,10 +5,12 @@ import * as vscode from 'vscode';
 import { DocumentNodeIndex } from './DocumentNodeIndex';
 import { createSnapshot, extractRepositoryData, getDateFormatted } from './utils';
 
-const OPTION_LIST_PARSED_FILES_PATHS: boolean = true;
+const OPTION_LIST_PARSED_APP_FILES_PATHS: boolean = true;
+const OPTION_PARSE_COVERGAGE_STATS: boolean = true;
 const userInputBranchToAnalyze = 'dev';
-const OPTION_PARSE_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '**/*.ts';
-const OPTION_PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '**/*.{e2e-spec,d,po,spec,test}.ts';
+const OPTION_PARSE_APP_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '**/*.ts';
+const OPTION_PARSE_APP_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '**/*.{e2e-spec,d,po,spec,test}.ts';
+const OPTION_PARSE_TEST_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '**/*.spec.ts';
 
 /**
  * ## Command: ParseWorkspace
@@ -23,7 +25,10 @@ async function commandParseWorkspace(): Promise<void> {
             }
         },
     };
-    const mydata: DocumentNodeIndex = {};
+    const mydata: DocumentNodeIndex = {
+        projectName: 'PROJECT_NAME_PLACEHOLDER',
+        timestamp: Math.floor( new Date().getTime() / 1000 ),
+    };
 
     const userInputProjectName: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
     if (!userInputProjectName || typeof userInputProjectName !== 'string') {
@@ -42,12 +47,14 @@ async function commandParseWorkspace(): Promise<void> {
         return;
     }
 
-    mydata.currentState = await createSnapshot(
-        getDateFormatted(),
-        OPTION_PARSE_FILE_PATTERN_INCLUDE,
-        OPTION_PARSE_FILE_PATTERN_EXCLUDE,
-        OPTION_LIST_PARSED_FILES_PATHS,
-    );
+    mydata.currentState = await createSnapshot({
+        snapshotDate: getDateFormatted(),
+        parseAppFilePatternInclude: OPTION_PARSE_APP_FILE_PATTERN_INCLUDE,
+        parseAppFilePatternExclude: OPTION_PARSE_APP_FILE_PATTERN_EXCLUDE,
+        parseTestFilePatternInclude: OPTION_PARSE_TEST_FILE_PATTERN_INCLUDE,
+        parseCoverageStats: OPTION_PARSE_COVERGAGE_STATS,
+        listParsedAppFiles: OPTION_LIST_PARSED_APP_FILES_PATHS,
+    });
     const myDataAsText = JSON.stringify(mydata, null, 4);
 
     // show results
@@ -61,7 +68,10 @@ async function commandParseWorkspace(): Promise<void> {
 */
 async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
     let undoStopBefore = true;
-    const mydata: DocumentNodeIndex = {};
+    const mydata: DocumentNodeIndex = {
+        projectName: 'PROJECT_NAME_PLACEHOLDER',
+        timestamp: Math.floor( new Date().getTime() / 1000 ),
+    };
 
     const showInputBoxOptions: vscode.InputBoxOptions = {
         placeHolder: '',
@@ -108,16 +118,17 @@ async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
         return;
     }
     const mainWorkspaceFolderUri: vscode.WorkspaceFolder = vscode.workspace.workspaceFolders[0];
-
-    mydata.snapShots = await extractRepositoryData(
-        mainWorkspaceFolderUri,
-        userInputBranchToAnalyze,
-        userInputStartYear,
-        userInputStartMonth,
-        OPTION_PARSE_FILE_PATTERN_INCLUDE,
-        OPTION_PARSE_FILE_PATTERN_EXCLUDE,
-        OPTION_LIST_PARSED_FILES_PATHS
-    );
+    mydata.snapShots = await extractRepositoryData({
+        workspaceFolderUri: mainWorkspaceFolderUri,
+        branch: userInputBranchToAnalyze,
+        startYear: userInputStartYear,
+        startMonth: userInputStartMonth,
+        parseAppFilePatternInclude: OPTION_PARSE_APP_FILE_PATTERN_INCLUDE,
+        parseAppFilePatternExclude: OPTION_PARSE_APP_FILE_PATTERN_EXCLUDE,
+        parseTestFilePatternInclude: OPTION_PARSE_TEST_FILE_PATTERN_INCLUDE,
+        parseCoverageStats: OPTION_PARSE_COVERGAGE_STATS,
+        listParsedFiles: OPTION_LIST_PARSED_APP_FILES_PATHS,
+    });
     const myDataAsText = JSON.stringify(mydata, null, 4);
 
     // show results

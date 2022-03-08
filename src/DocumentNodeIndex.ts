@@ -1,15 +1,25 @@
 export interface DocumentNodeIndex {
-    projectName?: string;
+    projectName: string;
+    timestamp: number,
     currentState?: DocumentNodeIndexSnapShot;
     snapShots?: DocumentNodeIndexSnapShot[]; 
 }
 
 export interface DocumentNodeIndexSnapShot {
     snapshotDate: string;
-    documentsParsedPaths?: string[];
-    documentsParsedAmount: number;
-    stats: {
-        [key: string]: number;
+    applicationStats?: {
+        documentsParsedPaths?: string[];
+        documentsParsedAmount: number;
+        stats: {
+            [key: string]: number;
+        };
+    };
+    coverageStats?: {
+        documentsParsedPaths?: string[];
+        documentsParsedAmount: number;
+        stats: {
+            [key: string]: number;
+        };
     };
 }
 
