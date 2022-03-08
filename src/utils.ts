@@ -54,6 +54,7 @@ export function processDocumentEntry(
 
 /**
  * ## createSnapshot
+ * @param workspaceFolder object containing root file system location of repository
  * @param snapshotDate date formatted as string of `YYYY-mm-dd`
  * @param parseAppFilePatternInclude glob pattern to include functional application files
  * @param parseAppFilePatternExclude glob pattern to exclude functional application files
@@ -63,6 +64,7 @@ export function processDocumentEntry(
  * @returns snapshot of parsed application profile
  */
 export async function createSnapshot(opts: {
+    workspaceFolderUri: vscode.WorkspaceFolder,
     snapshotDate: string,
     parseAppFilePatternInclude: vscode.GlobPattern,
     parseAppFilePatternExclude: vscode.GlobPattern,
@@ -72,19 +74,20 @@ export async function createSnapshot(opts: {
 }): Promise<DocumentNodeIndexSnapShot> {
     const snapShot: DocumentNodeIndexSnapShot = {
         snapshotDate: opts.snapshotDate,
+        snapshotHash: scmGitGetCurrentCommitHash(opts.workspaceFolderUri),
         applicationStats: {
-            documentsParsedPaths: [],
+            ...(opts.listParsedAppFiles && ({ documentsParsedPaths: [] })),
             documentsParsedAmount: 0,
             stats: {},
         },
-        ...( opts.listParsedAppFiles && ({coverageStats: {
-            documentsParsedPaths: [],
+        ...( opts.parseCoverageStats && ({coverageStats: {
+            ...(opts.listParsedAppFiles && ({ documentsParsedPaths: [] })),
             documentsParsedAmount: 0,
             testCaseOccurrences: 0,
         }})),
     };
 
-    const matchedFilesUrisApp: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseAppFilePatternInclude, opts.parseAppFilePatternExclude, 50);
+    const matchedFilesUrisApp: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseAppFilePatternInclude, opts.parseAppFilePatternExclude, 100);
     if (!matchedFilesUrisApp || matchedFilesUrisApp.length === 0) {
         vscode.window.showWarningMessage(`No files found with inclusive pattern "${opts.parseAppFilePatternInclude}" and exclusive pattern "${opts.parseAppFilePatternExclude}".`);
         return snapShot;
@@ -118,7 +121,7 @@ export async function createSnapshot(opts: {
     // parse application coverage
     let tasksCoverage: Thenable<void>[] = [];
     if (opts.parseCoverageStats && opts.parseTestFilePatternInclude) {
-        const matchedFilesUrisCoverage: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseTestFilePatternInclude, null, 50);
+        const matchedFilesUrisCoverage: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseTestFilePatternInclude, null, 100);
         if (!matchedFilesUrisCoverage || matchedFilesUrisCoverage.length === 0) {
             vscode.window.showWarningMessage(`No test files found with inclusive pattern "${opts.parseTestFilePatternInclude}".`);
             return snapShot;
@@ -170,6 +173,21 @@ export async function showLoadingInProgress(asyncFn: () => Promise<void>): Promi
 /**
  * ## scmGitCleanup
  * @param workspaceFolder object containing root file system location of repository
+ * @returns commit hash of current Git repo state
+ */
+ export function scmGitGetCurrentCommitHash(
+    workspaceFolder: vscode.WorkspaceFolder,
+): string {
+    const procGitCheckout: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['rev-parse', 'HEAD'], {
+        cwd: workspaceFolder.uri.path
+    });
+    const sanitizedValue = String(procGitCheckout.stdout).replace(/^\s+|\s+$/g, '');
+    return sanitizedValue;
+}
+
+/**
+ * ## scmGitCleanup
+ * @param workspaceFolder object containing root file system location of repository
  * @param branch name of Git branch
  */
 export function scmGitCleanup(
@@ -186,37 +204,39 @@ export function scmGitCleanup(
  * ## scmGitCheckoutBefore
  * @param workspaceFolder object containing root file system location of repository
  * @param branch name of Git branch
- * @param year Search for commit near to year as string, e. g. `'2017'`
- * @param month Search for commit near to month as string, e. g. `'03'`
+ * @param year Search for commit near to year, e. g. `2017`
+ * @param month Search for commit near to month, e. g. `3`
  */
 export function scmGitCheckoutBefore(
     workspaceFolder: vscode.WorkspaceFolder,
     branch: string,
-    year: string,
-    month: string,
+    year: number,
+    month: number,
 ): void {
-    console.log( `!!! scmGitCheckoutBefore.year, month:`, year, month );
-    scmGitCleanup(workspaceFolder, branch);
-    const procGitRevList: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['rev-list', '--max-count=1', `--before="${year}-${month}-01 00:00"`, 'dev'], {
+    const _month = month < 10 ? `0${month}` : `${month}`;
+    console.log( `!!! scmGitCheckoutBefore.year, month:`, year, _month );
+    const procGitRevList: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['rev-list', '--max-count=1', `--before="${year}-${_month}-01 00:00"`, 'dev'], {
         cwd: workspaceFolder.uri.path
     });
-    const procGitCheckout: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['checkout', String(procGitRevList.stdout)], {
+    const revListOutput = String(procGitRevList.stdout).replace(/^\s+|\s+$/g, '');
+    console.log( '!!! scmGitCheckoutBefore.revListOutput:', JSON.stringify(revListOutput, null, 4) );
+    const procGitCheckout: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('git', ['checkout', revListOutput], {
         cwd: workspaceFolder.uri.path
     });
-    console.log('!!! scmGitCheckoutBefore: ' + String(procGitCheckout.stdout));
+    console.log('!!! scmGitCheckoutBefore.stderr:' + String(procGitCheckout.stderr));
 }
 /**
  * ## extractRepositoryData
  * @param workspaceFolder object containing root file system location of repository
  * @param branch name of Git branch
- * @param startYear Search for commit near to year as string, e. g. `'2017'`
- * @param startMonth Search for commit near to month as string, e. g. `'03'`
+ * @param startYear Search for commit near to year, e. g. `2017`
+ * @param startMonth Search for commit near to month, e. g. `3`
  * @param parseAppFilePatternInclude glob pattern to include functional application files
  * @param parseAppFilePatternExclude glob pattern to exclude functional application files
  * @param parseTestFilePatternInclude glob pattern to include test application files
  * @param parseCoverageStats if TRUE, files matching `parseTestFilePatternInclude` will be included
  * @param listParsedAppFiles if TRUE, filesystem path strings of parsed files will be included
- * @returns 
+ * @returns application profile snapshot data object
  */
 export async function extractRepositoryData(opts: {
     workspaceFolderUri: vscode.WorkspaceFolder,
@@ -229,8 +249,10 @@ export async function extractRepositoryData(opts: {
     parseCoverageStats?: boolean,
     listParsedFiles?: boolean,
 }): Promise<DocumentNodeIndexSnapShot[]> {
-    const retVal: DocumentNodeIndexSnapShot[] = [];
+    // clean up
+    scmGitCleanup(opts.workspaceFolderUri, opts.branch);
 
+    const retVal: DocumentNodeIndexSnapShot[] = [];
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
     const startDate = new Date(`${opts.startYear}-${opts.startMonth}-01`);
@@ -240,11 +262,14 @@ export async function extractRepositoryData(opts: {
         var loop = new Date(startDate);
         while(loop <= endDate) {
             console.log( '!!! loop current date:', JSON.stringify(loop, null, 4) );
+            const _currentMonth = loop.getMonth() + 1;
+            const _currentYear = loop.getFullYear();
             // checkout at date
-            // scmGitCheckoutBefore(workspaceFolderUri, branch, currentYear, currentMonth);
+            scmGitCheckoutBefore(opts.workspaceFolderUri, opts.branch, _currentYear, _currentMonth);
     
             // get software complexity data
             const snapshotData = await createSnapshot({
+                workspaceFolderUri: opts.workspaceFolderUri,
                 snapshotDate: getDateFormatted(loop),
                 parseAppFilePatternInclude: opts.parseAppFilePatternInclude,
                 parseAppFilePatternExclude: opts.parseAppFilePatternExclude,
@@ -259,6 +284,6 @@ export async function extractRepositoryData(opts: {
         }
     });
     // clean up
-    // scmGitCleanup(workspaceFolderUri, branch);
+    scmGitCleanup(opts.workspaceFolderUri, opts.branch);
     return retVal;
 }

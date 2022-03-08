@@ -1,11 +1,8 @@
-/* eslint-disable @typescript-eslint/naming-convention */
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in code below
 import * as vscode from 'vscode';
 import { DocumentNodeIndex } from './DocumentNodeIndex';
 import { createSnapshot, extractRepositoryData, getDateFormatted } from './utils';
 
-const OPTION_LIST_PARSED_APP_FILES_PATHS: boolean = true;
+const OPTION_LIST_PARSED_APP_FILES_PATHS: boolean = false;
 const OPTION_PARSE_COVERGAGE_STATS: boolean = true;
 const userInputBranchToAnalyze = 'dev';
 const OPTION_PARSE_APP_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '**/*.ts';
@@ -46,8 +43,9 @@ async function commandParseWorkspace(): Promise<void> {
         vscode.window.showErrorMessage('No workspace folders. Add at least one folder to workspace.');
         return;
     }
-
+    const mainWorkspaceFolderUri: vscode.WorkspaceFolder = vscode.workspace.workspaceFolders[0];
     mydata.currentState = await createSnapshot({
+        workspaceFolderUri: mainWorkspaceFolderUri,
         snapshotDate: getDateFormatted(),
         parseAppFilePatternInclude: OPTION_PARSE_APP_FILE_PATTERN_INCLUDE,
         parseAppFilePatternExclude: OPTION_PARSE_APP_FILE_PATTERN_EXCLUDE,
