@@ -7,9 +7,8 @@ import { createSnapshot, extractRepositoryData, getDateFormatted } from './utils
 
 const OPTION_LIST_PARSED_FILES_PATHS: boolean = true;
 const userInputBranchToAnalyze = 'dev';
-const OPTION_PARSE_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '*.ts';
-const OPTION_PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '*{.,-}{po,spec,d}.ts';
-// const PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '**/{node_modules/**}?/*.{po,spec,d}.ts';
+const OPTION_PARSE_FILE_PATTERN_INCLUDE: vscode.GlobPattern = '**/*.ts';
+const OPTION_PARSE_FILE_PATTERN_EXCLUDE: vscode.GlobPattern = '**/*.{e2e-spec,d,po,spec,test}.ts';
 
 /**
  * ## Command: ParseWorkspace
@@ -93,7 +92,7 @@ async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
         vscode.window.showErrorMessage('Invalid input string for start year.');
         return;
     }
-    showInputBoxOptions.value = '09';
+    showInputBoxOptions.value = '12';
     const userInputStartMonth: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
     if (!userInputStartMonth || typeof userInputStartMonth !== 'string') {
         // undo

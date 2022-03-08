@@ -4,7 +4,6 @@ import { DocumentNodeEntry, DocumentNodeIndexSnapShot } from './DocumentNodeInde
 import SymbolKinds from './SymbolKinds';
 
 export function getDateFormatted(convertDate: Date = new Date()): string {
-    // const today = new Date();
     const yyyy = convertDate.getFullYear();
     const mm = convertDate.getMonth() + 1; // Months start at 0!
     const dd = convertDate.getDate();
@@ -53,7 +52,7 @@ export async function createSnapshot(
         stats: {},
     };
 
-    const matchedFilesUris: vscode.Uri[] = await vscode.workspace.findFiles(`**/${parseFilePatternInclude}`, `**/${parseFilePatternExclude}`, 10);
+    const matchedFilesUris: vscode.Uri[] = await vscode.workspace.findFiles(parseFilePatternInclude, parseFilePatternExclude, 70);
     if (!matchedFilesUris || matchedFilesUris.length === 0) {
         vscode.window.showWarningMessage(`No files found with inclusive pattern "${parseFilePatternInclude}" and exclusive pattern "${parseFilePatternExclude}".`);
         return snapShot;
@@ -82,7 +81,10 @@ export async function createSnapshot(
             }
         });
     });
-    await Promise.all(tasks);
+
+    await showLoadingInProgress(async () => {
+        await Promise.all(tasks);
+    });
 
     return snapShot;
 }
@@ -91,7 +93,7 @@ export async function showLoadingInProgress(asyncFn: () => Promise<void>): Promi
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Window,
         cancellable: false,
-        title: 'Extracting repository data'
+        title: 'Extension test-profitability: Extracting repository data'
     }, async (progress) => {
         progress.report({  increment: 0 });
         await asyncFn();
