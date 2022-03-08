@@ -17,9 +17,7 @@ export interface DocumentNodeIndexSnapShot {
     coverageStats?: {
         documentsParsedPaths?: string[];
         documentsParsedAmount: number;
-        stats: {
-            [key: string]: number;
-        };
+        testCaseOccurrences: number;
     };
 }
 

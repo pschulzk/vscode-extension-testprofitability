@@ -80,7 +80,7 @@ export async function createSnapshot(opts: {
         ...( opts.listParsedAppFiles && ({coverageStats: {
             documentsParsedPaths: [],
             documentsParsedAmount: 0,
-            stats: {},
+            testCaseOccurrences: 0,
         }})),
     };
 
@@ -124,27 +124,19 @@ export async function createSnapshot(opts: {
             return snapShot;
         }
         tasksCoverage = matchedFilesUrisCoverage.map(async (uri: vscode.Uri) => {
-            const symbols: vscode.DocumentSymbol[] = await vscode.commands.executeCommand(
-                'vscode.executeDocumentSymbolProvider',
-                uri,
-            );
-            const parsedData = processDocumentEntry(uri.path, symbols, 0);
             if (opts.listParsedAppFiles) {
                 snapShot.coverageStats!.documentsParsedPaths!.push(uri.path);   
             }
             snapShot.coverageStats!.documentsParsedAmount++;
-    
-            Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
-                // `constructor` causing problems reading and is irrelevant for stats parsing
-                if (symbolKey === 'constructor') {
-                    return;
-                }
-                if (snapShot.coverageStats!.stats[symbolKey]) {
-                    snapShot.coverageStats!.stats[symbolKey] = snapShot.coverageStats!.stats[symbolKey] + occurrences;
-                } else {
-                    snapShot.coverageStats!.stats[symbolKey] = occurrences;
-                }
-            });
+            // try to parse test cases
+            const testCasePattern = new RegExp(/\sit\(/, 'gi');
+            const fileContent = await vscode.workspace.fs.readFile(uri);
+            const fileContentString = Buffer.from(fileContent).toString('utf8');
+            const occurrences = fileContentString.match(testCasePattern);
+            if (Array.isArray(occurrences) && occurrences.length > 0) {
+                snapShot.coverageStats!.testCaseOccurrences = snapShot.coverageStats!.testCaseOccurrences + occurrences.length;
+            }
+
         });
     }
 
