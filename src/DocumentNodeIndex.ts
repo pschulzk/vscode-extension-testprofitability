@@ -5,6 +5,7 @@ export interface DocumentNodeIndex {
 }
 
 export interface DocumentNodeIndexSnapShot {
+    snapshotDate: string;
     documentsParsedPaths?: string[];
     documentsParsedAmount: number;
     stats: {
