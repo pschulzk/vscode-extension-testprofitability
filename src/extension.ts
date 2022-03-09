@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { DocumentNodeIndex } from './DocumentNodeIndex';
-import { createSnapshot, extractRepositoryData, getDateFormatted } from './utils';
+import { DocumentNodeIndex, DocumentNodeIndexSnapShot } from './DocumentNodeIndex';
+import { createSnapshot, extractRepositoryData, getDateFormatted, showLoadingInProgress } from './utils';
 
 const OPTION_LIST_PARSED_APP_FILES_PATHS: boolean = false;
 const OPTION_PARSE_COVERGAGE_STATS: boolean = true;
@@ -44,15 +44,19 @@ async function commandParseWorkspace(): Promise<void> {
         return;
     }
     const mainWorkspaceFolderUri: vscode.WorkspaceFolder = vscode.workspace.workspaceFolders[0];
-    mydata.currentState = await createSnapshot({
-        workspaceFolderUri: mainWorkspaceFolderUri,
-        snapshotDate: getDateFormatted(),
-        parseAppFilePatternInclude: OPTION_PARSE_APP_FILE_PATTERN_INCLUDE,
-        parseAppFilePatternExclude: OPTION_PARSE_APP_FILE_PATTERN_EXCLUDE,
-        parseTestFilePatternInclude: OPTION_PARSE_TEST_FILE_PATTERN_INCLUDE,
-        parseCoverageStats: OPTION_PARSE_COVERGAGE_STATS,
-        listParsedAppFiles: OPTION_LIST_PARSED_APP_FILES_PATHS,
+    await showLoadingInProgress(async (cancellationToken: vscode.CancellationToken) => {
+        mydata.currentState = await createSnapshot({
+            cancellationToken,
+            workspaceFolderUri: mainWorkspaceFolderUri,
+            snapshotDate: getDateFormatted(),
+            parseAppFilePatternInclude: OPTION_PARSE_APP_FILE_PATTERN_INCLUDE,
+            parseAppFilePatternExclude: OPTION_PARSE_APP_FILE_PATTERN_EXCLUDE,
+            parseTestFilePatternInclude: OPTION_PARSE_TEST_FILE_PATTERN_INCLUDE,
+            parseCoverageStats: OPTION_PARSE_COVERGAGE_STATS,
+            listParsedAppFiles: OPTION_LIST_PARSED_APP_FILES_PATHS,
+        });
     });
+    
     const myDataAsText = JSON.stringify(mydata, null, 4);
 
     // show results
@@ -90,7 +94,7 @@ async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
     } else {
         mydata.projectName = userInputProjectName;
     }
-    showInputBoxOptions.value = '2021';
+    showInputBoxOptions.value = '2017';
     const userInputStartYear: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
     if (!userInputStartYear || typeof userInputStartYear !== 'string') {
         // undo
@@ -100,7 +104,7 @@ async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
         vscode.window.showErrorMessage('Invalid input string for start year.');
         return;
     }
-    showInputBoxOptions.value = '12';
+    showInputBoxOptions.value = '9';
     const userInputStartMonth: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
     if (!userInputStartMonth || typeof userInputStartMonth !== 'string') {
         // undo

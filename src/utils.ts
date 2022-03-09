@@ -64,6 +64,7 @@ export function processDocumentEntry(
  * @returns snapshot of parsed application profile
  */
 export async function createSnapshot(opts: {
+    cancellationToken: vscode.CancellationToken,
     workspaceFolderUri: vscode.WorkspaceFolder,
     snapshotDate: string,
     parseAppFilePatternInclude: vscode.GlobPattern,
@@ -72,6 +73,7 @@ export async function createSnapshot(opts: {
     parseCoverageStats?: boolean,
     listParsedAppFiles?: boolean,
 }): Promise<DocumentNodeIndexSnapShot> {
+    const currentCommitHash = scmGitGetCurrentCommitHash(opts.workspaceFolderUri);
     const snapShot: DocumentNodeIndexSnapShot = {
         snapshotDate: opts.snapshotDate,
         snapshotHash: scmGitGetCurrentCommitHash(opts.workspaceFolderUri),
@@ -86,15 +88,21 @@ export async function createSnapshot(opts: {
             testCaseOccurrences: 0,
         }})),
     };
+    const errorMessage = 'Operation has been cancelled';
 
-    const matchedFilesUrisApp: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseAppFilePatternInclude, opts.parseAppFilePatternExclude, 100);
+    const matchedFilesUrisApp: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseAppFilePatternInclude, opts.parseAppFilePatternExclude);
     if (!matchedFilesUrisApp || matchedFilesUrisApp.length === 0) {
-        vscode.window.showWarningMessage(`No files found with inclusive pattern "${opts.parseAppFilePatternInclude}" and exclusive pattern "${opts.parseAppFilePatternExclude}".`);
+        vscode.window.showWarningMessage(
+            `No files found with inclusive pattern "${opts.parseAppFilePatternInclude}" and exclusive pattern "${opts.parseAppFilePatternExclude}" at commit with hash "${currentCommitHash}".`
+        );
         return snapShot;
     }
 
     // parse application stats
     const tasksApp: Thenable<void>[] = matchedFilesUrisApp.map(async (uri: vscode.Uri) => {
+        if (opts.cancellationToken.isCancellationRequested) {
+            throw new Error(errorMessage);
+        }
         const symbols: vscode.DocumentSymbol[] = await vscode.commands.executeCommand(
             'vscode.executeDocumentSymbolProvider',
             uri,
@@ -106,10 +114,6 @@ export async function createSnapshot(opts: {
         snapShot.applicationStats!.documentsParsedAmount++;
 
         Object.entries(parsedData.documentNodes).forEach(([symbolKey, occurrences]: [string, number]) => {
-            // `constructor` causing problems reading and is irrelevant for stats parsing
-            if (symbolKey === 'constructor') {
-                return;
-            }
             if (snapShot.applicationStats!.stats[symbolKey]) {
                 snapShot.applicationStats!.stats[symbolKey] = snapShot.applicationStats!.stats[symbolKey] + occurrences;
             } else {
@@ -121,12 +125,15 @@ export async function createSnapshot(opts: {
     // parse application coverage
     let tasksCoverage: Thenable<void>[] = [];
     if (opts.parseCoverageStats && opts.parseTestFilePatternInclude) {
-        const matchedFilesUrisCoverage: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseTestFilePatternInclude, null, 100);
+        const matchedFilesUrisCoverage: vscode.Uri[] = await vscode.workspace.findFiles(opts.parseTestFilePatternInclude, null);
         if (!matchedFilesUrisCoverage || matchedFilesUrisCoverage.length === 0) {
-            vscode.window.showWarningMessage(`No test files found with inclusive pattern "${opts.parseTestFilePatternInclude}".`);
+            vscode.window.showWarningMessage(`No test files found with inclusive pattern "${opts.parseTestFilePatternInclude}" at commit with hash "${currentCommitHash}".`);
             return snapShot;
         }
         tasksCoverage = matchedFilesUrisCoverage.map(async (uri: vscode.Uri) => {
+            if (opts.cancellationToken.isCancellationRequested) {
+                throw new Error(errorMessage);
+            }
             if (opts.listParsedAppFiles) {
                 snapShot.coverageStats!.documentsParsedPaths!.push(uri.path);   
             }
@@ -147,9 +154,7 @@ export async function createSnapshot(opts: {
     if (opts.parseCoverageStats && tasksCoverage.length > 0) {
         allTasks.concat(tasksCoverage);
     }
-    await showLoadingInProgress(async () => {
-        await Promise.all(allTasks);
-    });
+    await Promise.all(allTasks);
 
     return snapShot;
 }
@@ -158,20 +163,23 @@ export async function createSnapshot(opts: {
  * ## showLoadingInProgress
  * @param asyncFn async method triggering loading indicator until completed
  */
-export async function showLoadingInProgress(asyncFn: () => Promise<void>): Promise<void> {
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Window,
-        cancellable: false,
-        title: 'Extension test-profitability: Extracting repository data'
-    }, async (progress) => {
-        progress.report({  increment: 0 });
-        await asyncFn();
-        progress.report({ increment: 100 });
-    });
+export async function showLoadingInProgress(asyncFn: (cancellationToken: vscode.CancellationToken) => Promise<void>): Promise<void> {
+    await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Window,
+            cancellable: true,
+            title: 'Parsing application profile data',
+        },
+        async (progress, cancellationToken) => {
+            progress.report({ increment: 0 });
+            await asyncFn(cancellationToken);
+            progress.report({ increment: 100 });
+        },
+    );
 }
 
 /**
- * ## scmGitCleanup
+ * ## scmGitGetCurrentCommitHash
  * @param workspaceFolder object containing root file system location of repository
  * @returns commit hash of current Git repo state
  */
@@ -258,9 +266,13 @@ export async function extractRepositoryData(opts: {
     const startDate = new Date(`${opts.startYear}-${opts.startMonth}-01`);
     const endDate = new Date(`${currentYear}-${currentMonth}-01`);
 
-    await showLoadingInProgress(async () => {
+    await showLoadingInProgress(async (cancellationToken: vscode.CancellationToken) => {
         var loop = new Date(startDate);
-        while(loop <= endDate) {
+        while (loop <= endDate) {
+            if (cancellationToken.isCancellationRequested) {
+                vscode.window.showErrorMessage('Operation has been cancelled');
+                break;
+            }
             console.log( '!!! loop current date:', JSON.stringify(loop, null, 4) );
             const _currentMonth = loop.getMonth() + 1;
             const _currentYear = loop.getFullYear();
@@ -276,7 +288,13 @@ export async function extractRepositoryData(opts: {
                 parseTestFilePatternInclude: opts.parseTestFilePatternInclude,
                 parseCoverageStats: opts.parseCoverageStats,
                 listParsedAppFiles: opts.listParsedFiles,
+                cancellationToken,
             });
+
+            if (!snapshotData) {
+                return;
+            }
+            
             retVal.push(snapshotData);
 
             const newDate = new Date(loop.setMonth(loop.getMonth() + 1));
