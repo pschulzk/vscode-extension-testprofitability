@@ -1,7 +1,8 @@
 import * as cp from 'child_process';
 import * as vscode from 'vscode';
-import { DocumentNodeEntry, DocumentNodeIndexSnapShot } from './DocumentNodeIndex';
+import { IDocumentNodeEntry, IDocumentNodeIndexSnapShot, IMetricHalstead } from './DocumentNodeIndex';
 import SymbolKinds from './SymbolKinds';
+const tscomplex = require('ts-complex');
 
 /**
  * ## getDateFormatted
@@ -27,9 +28,9 @@ export function processDocumentEntry(
     path: string,
     symbols: vscode.DocumentSymbol[],
     depth: number,
-    documentNodeEntry?: DocumentNodeEntry,
-): DocumentNodeEntry {
-    let _documentNodeEntry: DocumentNodeEntry;
+    documentNodeEntry?: IDocumentNodeEntry,
+): IDocumentNodeEntry {
+    let _documentNodeEntry: IDocumentNodeEntry;
     if (!documentNodeEntry) {
         _documentNodeEntry = {
             path,
@@ -72,15 +73,28 @@ export async function createSnapshot(opts: {
     parseTestFilePatternInclude?: vscode.GlobPattern,
     parseCoverageStats?: boolean,
     listParsedAppFiles?: boolean,
-}): Promise<DocumentNodeIndexSnapShot> {
+}): Promise<IDocumentNodeIndexSnapShot> {
     const currentCommitHash = scmGitGetCurrentCommitHash(opts.workspaceFolderUri);
-    const snapShot: DocumentNodeIndexSnapShot = {
+    const snapShot: IDocumentNodeIndexSnapShot = {
         snapshotDate: opts.snapshotDate,
         snapshotHash: scmGitGetCurrentCommitHash(opts.workspaceFolderUri),
         applicationStats: {
             ...(opts.listParsedAppFiles && ({ documentsParsedPaths: [] })),
             documentsParsedAmount: 0,
             stats: {},
+            metrics: {
+                halstead: {
+                    length: 0,
+                    vocabulary: 0,
+                    volume: 0,
+                    difficulty: 0,
+                    effort: 0,
+                    time: 0,
+                    bugsDelivered: 0,
+                    operands: 0,
+                    operators: 0,
+                }
+            },
         },
         ...( opts.parseCoverageStats && ({coverageStats: {
             ...(opts.listParsedAppFiles && ({ documentsParsedPaths: [] })),
@@ -120,6 +134,33 @@ export async function createSnapshot(opts: {
                 snapShot.applicationStats!.stats[symbolKey] = occurrences;
             }
         });
+
+        // ts-complex
+        const metricHalsteadFunctions: { [key: string]: IMetricHalstead; } = tscomplex.calculateHalstead(uri.path);
+        Object.values(metricHalsteadFunctions).forEach((metricHalstead) => {
+            Object.entries(metricHalstead).forEach(([param, val]) => {
+                const _param = param as keyof IMetricHalstead;
+                if (!['operands', 'operators'].includes(_param)) {
+                    if (!Number.isNaN(val)) {
+                        snapShot.applicationStats!.metrics.halstead[_param] = snapShot.applicationStats!.metrics.halstead[_param] + val;
+                    }
+                } else {
+                    // because:
+                    // operands/operators: {
+                    //     total: number;
+                    //     _unique: string[];
+                    //     unique: number;
+                    // };
+                    snapShot.applicationStats!.metrics.halstead[_param] = snapShot.applicationStats!.metrics.halstead[_param] + val.total;
+                }
+            });
+        });
+        
+    });
+    // beautify
+    Object.entries(snapShot.applicationStats!.metrics.halstead).forEach(([param, val]) => {
+        const _param = param as keyof IMetricHalstead;
+        snapShot.applicationStats!.metrics.halstead[_param] = Math.floor(snapShot.applicationStats!.metrics.halstead[_param]);
     });
 
     // parse application coverage
@@ -256,11 +297,11 @@ export async function extractRepositoryData(opts: {
     parseTestFilePatternInclude?: vscode.GlobPattern,
     parseCoverageStats?: boolean,
     listParsedFiles?: boolean,
-}): Promise<DocumentNodeIndexSnapShot[]> {
+}): Promise<IDocumentNodeIndexSnapShot[]> {
     // clean up
     scmGitCleanup(opts.workspaceFolderUri, opts.branch);
 
-    const retVal: DocumentNodeIndexSnapShot[] = [];
+    const retVal: IDocumentNodeIndexSnapShot[] = [];
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
     const startDate = new Date(`${opts.startYear}-${opts.startMonth}-01`);

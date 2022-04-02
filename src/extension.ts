@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { DocumentNodeIndex, DocumentNodeIndexSnapShot } from './DocumentNodeIndex';
+import { IDocumentNodeIndex, IDocumentNodeIndexSnapShot } from './DocumentNodeIndex';
 import { createSnapshot, extractRepositoryData, getDateFormatted, showLoadingInProgress } from './utils';
 
 const OPTION_LIST_PARSED_APP_FILES_PATHS: boolean = false;
@@ -22,7 +22,7 @@ async function commandParseWorkspace(): Promise<void> {
             }
         },
     };
-    const mydata: DocumentNodeIndex = {
+    const mydata: IDocumentNodeIndex = {
         projectName: 'PROJECT_NAME_PLACEHOLDER',
         timestamp: Math.floor( new Date().getTime() / 1000 ),
     };
@@ -70,7 +70,7 @@ async function commandParseWorkspace(): Promise<void> {
 */
 async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
     let undoStopBefore = true;
-    const mydata: DocumentNodeIndex = {
+    const mydata: IDocumentNodeIndex = {
         projectName: 'PROJECT_NAME_PLACEHOLDER',
         timestamp: Math.floor( new Date().getTime() / 1000 ),
     };
@@ -94,7 +94,7 @@ async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
     } else {
         mydata.projectName = userInputProjectName;
     }
-    showInputBoxOptions.value = '2017';
+    showInputBoxOptions.value = '2018';
     const userInputStartYear: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
     if (!userInputStartYear || typeof userInputStartYear !== 'string') {
         // undo
@@ -104,7 +104,7 @@ async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
         vscode.window.showErrorMessage('Invalid input string for start year.');
         return;
     }
-    showInputBoxOptions.value = '9';
+    showInputBoxOptions.value = '1';
     const userInputStartMonth: string | undefined = await vscode.window.showInputBox(showInputBoxOptions);
     if (!userInputStartMonth || typeof userInputStartMonth !== 'string') {
         // undo

@@ -1,11 +1,11 @@
-export interface DocumentNodeIndex {
+export interface IDocumentNodeIndex {
     projectName: string;
     timestamp: number,
-    currentState?: DocumentNodeIndexSnapShot;
-    snapShots?: DocumentNodeIndexSnapShot[]; 
+    currentState?: IDocumentNodeIndexSnapShot;
+    snapShots?: IDocumentNodeIndexSnapShot[]; 
 }
 
-export interface DocumentNodeIndexSnapShot {
+export interface IDocumentNodeIndexSnapShot {
     snapshotDate: string;
     snapshotHash?: string;
     applicationStats?: {
@@ -13,6 +13,9 @@ export interface DocumentNodeIndexSnapShot {
         documentsParsedAmount: number;
         stats: {
             [key: string]: number;
+        };
+        metrics: {
+            halstead: IMetricHalstead;
         };
     };
     coverageStats?: {
@@ -22,9 +25,20 @@ export interface DocumentNodeIndexSnapShot {
     };
 }
 
-export interface DocumentNodeEntry {
+export interface IDocumentNodeEntry {
     path: string;
     documentNodes: {
         [key: string]: number;
     };
+}
+export interface IMetricHalstead {
+    length: number;
+    vocabulary: number;
+    volume: number;
+    difficulty: number;
+    effort: number;
+    time: number;
+    bugsDelivered: number;
+    operands: number;
+    operators: number;
 }
