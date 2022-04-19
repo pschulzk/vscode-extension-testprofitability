@@ -7,7 +7,6 @@ export default [
     'method',
     'property',
     'field',
-    'constructor',
     'enum',
     'interface',
     'function',
