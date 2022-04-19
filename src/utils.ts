@@ -5,6 +5,17 @@ import SymbolKinds from './SymbolKinds';
 const tscomplex = require('ts-complex');
 
 /**
+ * Get potential bugs contained in an application based on Gaffney's formula
+ * @param loc amount of lines of code
+ * @returns amount of potential bugs devlivered
+ */
+export function getMetricGaffney(loc: number): any {
+    const GAFFNEY_CONST_A = 4.2;
+    const GAFFNEY_CONST_B = 0.0015;
+    return Math.floor(GAFFNEY_CONST_A + GAFFNEY_CONST_B * Math.pow(loc, (4/3)));
+}
+
+/**
  * ## getDateFormatted
  * @param convertDate 
  * @returns 
@@ -81,8 +92,12 @@ export async function createSnapshot(opts: {
         applicationStats: {
             ...(opts.listParsedAppFiles && ({ documentsParsedPaths: [] })),
             documentsParsedAmount: 0,
+            loc: 0,
             stats: {},
             metrics: {
+                gaffney: {
+                    bugsDelivered: 0,
+                },
                 halstead: {
                     length: 0,
                     vocabulary: 0,
@@ -121,6 +136,8 @@ export async function createSnapshot(opts: {
             'vscode.executeDocumentSymbolProvider',
             uri,
         );
+        // count lines of count
+        snapShot.applicationStats!.loc = snapShot.applicationStats!.loc + getFolderLOC(opts.workspaceFolderUri, uri);
         const parsedData = processDocumentEntry(uri.path, symbols, 0);
         if (opts.listParsedAppFiles) {
             snapShot.applicationStats!.documentsParsedPaths!.push(uri.path);   
@@ -135,7 +152,10 @@ export async function createSnapshot(opts: {
             }
         });
 
-        // ts-complex
+        // metric Gaffney
+        snapShot.applicationStats!.metrics.gaffney.bugsDelivered = getMetricGaffney(snapShot.applicationStats!.loc);
+
+        // Metric Halstead via ts-complex
         const metricHalsteadFunctions: { [key: string]: IMetricHalstead; } = tscomplex.calculateHalstead(uri.path);
         Object.values(metricHalsteadFunctions).forEach((metricHalstead) => {
             Object.entries(metricHalstead).forEach(([param, val]) => {
@@ -217,6 +237,21 @@ export async function showLoadingInProgress(asyncFn: (cancellationToken: vscode.
             progress.report({ increment: 100 });
         },
     );
+}
+
+/**
+ * ## getFolderLOC
+ * @param documentUri object containing document file system location of repository
+ * @returns amount of Lines of Code
+ */
+ export function getFolderLOC(
+    workspaceFolder: vscode.WorkspaceFolder,
+    documentUri: vscode.Uri,
+): number {
+    const procGitCheckout: cp.SpawnSyncReturns<Buffer> = cp.spawnSync('wc', ['-l', documentUri.path], { cwd: workspaceFolder.uri.path });
+    const sanitizedValue = String(procGitCheckout.stdout).replace(/^\s+|\s+$/g, '');
+    const parsedInt = parseInt(sanitizedValue, 10);
+    return parsedInt;
 }
 
 /**

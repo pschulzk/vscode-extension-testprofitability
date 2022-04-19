@@ -11,10 +11,12 @@ export interface IDocumentNodeIndexSnapShot {
     applicationStats?: {
         documentsParsedPaths?: string[];
         documentsParsedAmount: number;
+        loc: number;
         stats: {
             [key: string]: number;
         };
         metrics: {
+            gaffney: IMetricGaffney;
             halstead: IMetricHalstead;
         };
     };
@@ -30,6 +32,10 @@ export interface IDocumentNodeEntry {
     documentNodes: {
         [key: string]: number;
     };
+}
+
+export interface IMetricGaffney {
+    bugsDelivered: number;
 }
 export interface IMetricHalstead {
     length: number;
