@@ -1,4 +1,6 @@
+
 export interface IDocumentNodeIndex {
+    version: string;
     projectName: string;
     timestamp: number,
     currentState?: IDocumentNodeIndexSnapShot;
@@ -11,7 +13,8 @@ export interface IDocumentNodeIndexSnapShot {
     applicationStats?: {
         documentsParsedPaths?: string[];
         documentsParsedAmount: number;
-        loc: number;
+        locIncludingTests: number;
+        locExcludingTests: number;
         stats: {
             [key: string]: number;
         };
@@ -23,6 +26,7 @@ export interface IDocumentNodeIndexSnapShot {
     coverageStats?: {
         documentsParsedPaths?: string[];
         documentsParsedAmount: number;
+        locTestsOnly: number;
         testCaseOccurrences: number;
     };
 }
@@ -35,7 +39,9 @@ export interface IDocumentNodeEntry {
 }
 
 export interface IMetricGaffney {
-    bugsDelivered: number;
+    bugsIncludingTests: number;
+    bugsExcludingTests: number;
+    bugsTestsOnly: number;
 }
 export interface IMetricHalstead {
     length: number;

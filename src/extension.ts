@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
-import { IDocumentNodeIndex, IDocumentNodeIndexSnapShot } from './DocumentNodeIndex';
+import { IDocumentNodeIndex } from './DocumentNodeIndex';
 import { createSnapshot, extractRepositoryData, getDateFormatted, showLoadingInProgress } from './utils';
+import { EXTENSION_VERSION } from './version';
 
 const OPTION_LIST_PARSED_APP_FILES_PATHS: boolean = false;
 const OPTION_PARSE_COVERGAGE_STATS: boolean = true;
@@ -23,6 +24,7 @@ async function commandParseWorkspace(): Promise<void> {
         },
     };
     const mydata: IDocumentNodeIndex = {
+        version: EXTENSION_VERSION,
         projectName: 'PROJECT_NAME_PLACEHOLDER',
         timestamp: Math.floor( new Date().getTime() / 1000 ),
     };
@@ -71,6 +73,7 @@ async function commandParseWorkspace(): Promise<void> {
 async function commandParseWorkspaceSnapshotsGit(): Promise<void> {
     let undoStopBefore = true;
     const mydata: IDocumentNodeIndex = {
+        version: EXTENSION_VERSION,
         projectName: 'PROJECT_NAME_PLACEHOLDER',
         timestamp: Math.floor( new Date().getTime() / 1000 ),
     };

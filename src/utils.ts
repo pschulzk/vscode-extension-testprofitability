@@ -92,11 +92,14 @@ export async function createSnapshot(opts: {
         applicationStats: {
             ...(opts.listParsedAppFiles && ({ documentsParsedPaths: [] })),
             documentsParsedAmount: 0,
-            loc: 0,
+            locIncludingTests: 0,
+            locExcludingTests: 0,
             stats: {},
             metrics: {
                 gaffney: {
-                    bugsDelivered: 0,
+                    bugsIncludingTests: 0,
+                    bugsExcludingTests: 0,
+                    bugsTestsOnly: 0,
                 },
                 halstead: {
                     length: 0,
@@ -114,6 +117,7 @@ export async function createSnapshot(opts: {
         ...( opts.parseCoverageStats && ({coverageStats: {
             ...(opts.listParsedAppFiles && ({ documentsParsedPaths: [] })),
             documentsParsedAmount: 0,
+            locTestsOnly: 0,
             testCaseOccurrences: 0,
         }})),
     };
@@ -137,7 +141,7 @@ export async function createSnapshot(opts: {
             uri,
         );
         // count lines of count
-        snapShot.applicationStats!.loc = snapShot.applicationStats!.loc + getFolderLOC(opts.workspaceFolderUri, uri);
+        snapShot.applicationStats!.locExcludingTests = snapShot.applicationStats!.locExcludingTests + getFolderLOC(opts.workspaceFolderUri, uri);
         const parsedData = processDocumentEntry(uri.path, symbols, 0);
         if (opts.listParsedAppFiles) {
             snapShot.applicationStats!.documentsParsedPaths!.push(uri.path);   
@@ -151,9 +155,6 @@ export async function createSnapshot(opts: {
                 snapShot.applicationStats!.stats[symbolKey] = occurrences;
             }
         });
-
-        // metric Gaffney
-        snapShot.applicationStats!.metrics.gaffney.bugsDelivered = getMetricGaffney(snapShot.applicationStats!.loc);
 
         // Metric Halstead via ts-complex
         const metricHalsteadFunctions: { [key: string]: IMetricHalstead; } = tscomplex.calculateHalstead(uri.path);
@@ -176,11 +177,6 @@ export async function createSnapshot(opts: {
             });
         });
         
-    });
-    // beautify
-    Object.entries(snapShot.applicationStats!.metrics.halstead).forEach(([param, val]) => {
-        const _param = param as keyof IMetricHalstead;
-        snapShot.applicationStats!.metrics.halstead[_param] = Math.floor(snapShot.applicationStats!.metrics.halstead[_param]);
     });
 
     // parse application coverage
@@ -208,6 +204,8 @@ export async function createSnapshot(opts: {
                 snapShot.coverageStats!.testCaseOccurrences = snapShot.coverageStats!.testCaseOccurrences + occurrences.length;
             }
 
+            snapShot.coverageStats!.locTestsOnly = snapShot.coverageStats!.locTestsOnly + getFolderLOC(opts.workspaceFolderUri, uri);
+
         });
     }
 
@@ -216,6 +214,20 @@ export async function createSnapshot(opts: {
         allTasks.concat(tasksCoverage);
     }
     await Promise.all(allTasks);
+
+    // beautify
+    Object.entries(snapShot.applicationStats!.metrics.halstead).forEach(([param, val]) => {
+        const _param = param as keyof IMetricHalstead;
+        snapShot.applicationStats!.metrics.halstead[_param] = Math.floor(snapShot.applicationStats!.metrics.halstead[_param]);
+    });
+
+    // sum LOCs
+    snapShot.applicationStats!.locIncludingTests = snapShot.applicationStats!.locExcludingTests + snapShot.coverageStats!.locTestsOnly;
+
+    // metric Gaffney
+    snapShot.applicationStats!.metrics.gaffney.bugsIncludingTests = getMetricGaffney(snapShot.applicationStats!.locIncludingTests);
+    snapShot.applicationStats!.metrics.gaffney.bugsExcludingTests = getMetricGaffney(snapShot.applicationStats!.locExcludingTests);
+    snapShot.applicationStats!.metrics.gaffney.bugsTestsOnly = getMetricGaffney(snapShot.coverageStats!.locTestsOnly);
 
     return snapShot;
 }

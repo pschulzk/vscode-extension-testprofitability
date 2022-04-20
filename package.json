@@ -2,7 +2,7 @@
     "name": "test-profitability",
     "displayName": "test-profitability",
     "description": "Get insights on the ROI of a project's unit tests.",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "engines": {
         "vscode": "^1.64.0"
     },
@@ -30,6 +30,7 @@
         ]
     },
     "scripts": {
+        "prebuild": "node -p \"'export const EXTENSION_VERSION = ' + JSON.stringify(require('./package.json').version) + ';'\" > src/version.ts",
         "vscode:prepublish": "npm run package",
         "compile": "webpack",
         "watch": "webpack --watch",
