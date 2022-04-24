@@ -105,3 +105,9 @@ dist
 
 # macOS
 .DS_Store
+
+# OS-specific dependencies for testing
+.vscode-test
+
+# compiled files for testing
+out
